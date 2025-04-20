@@ -391,8 +391,8 @@ class ACT(nn.Module):
 
         `batch` should have the following structure:
         {
-            [robot_state_feature] (optional): (B, state_dim) batch of robot states.
-
+            [robot_state_feature]: (B, state_dim) batch of robot states.
+                AND/OR
             [image_features]: (B, n_cameras, C, H, W) batch of images.
                 AND/OR
             [env_state_feature]: (B, env_dim) batch of environment states.
@@ -412,8 +412,10 @@ class ACT(nn.Module):
 
         if "observation.images" in batch:
             batch_size = batch["observation.images"][0].shape[0]
-        else:
+        elif "observation.environment_state" in batch:
             batch_size = batch["observation.environment_state"].shape[0]
+        elif "observation.state" in batch:
+            batch_size = batch["observation.state"].shape[0]
 
         # Prepare the latent for input to the transformer encoder.
         if self.config.use_vae and "action" in batch:
