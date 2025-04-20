@@ -149,11 +149,18 @@ def init_keyboard_listener():
 
     def on_press(key):
         try:
-            if key == keyboard.Key.right:
-                print("Right arrow key pressed. Exiting loop...")
+            # if key == keyboard.Key.right:
+            #     print("Right arrow key pressed. Exiting loop...")
+            #     events["exit_early"] = True
+            if key == keyboard.Key.f4:
+                print("F1 key pressed. Exiting loop...")
                 events["exit_early"] = True
-            elif key == keyboard.Key.left:
-                print("Left arrow key pressed. Exiting loop and rerecord the last episode...")
+            # elif key == keyboard.Key.left:
+            #     print("Left arrow key pressed. Exiting loop and rerecord the last episode...")
+            #     events["rerecord_episode"] = True
+            #     events["exit_early"] = True
+            elif key == keyboard.Key.f1:
+                print("F4 key pressed. Exiting loop and rerecord the last episode...")
                 events["rerecord_episode"] = True
                 events["exit_early"] = True
             elif key == keyboard.Key.esc:
