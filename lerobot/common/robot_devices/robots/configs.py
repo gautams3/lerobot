@@ -557,6 +557,23 @@ class So100RobotConfig(ManipulatorRobotConfig):
     mock: bool = False
 
 
+@RobotConfig.register_subclass("so100_wrist")
+@dataclass
+class So100RobotWristCamConfig(So100RobotConfig):
+    """So100 Robot with one wrist camera."""
+    cameras: dict[str, CameraConfig] = field(
+        default_factory=lambda: {
+            "wrist": OpenCVCameraConfig(
+                camera_index=0,
+                fps=30,
+                width=640,
+                height=480,
+            ),
+        }
+    )
+
+    mock: bool = False
+
 @RobotConfig.register_subclass("stretch")
 @dataclass
 class StretchRobotConfig(RobotConfig):
