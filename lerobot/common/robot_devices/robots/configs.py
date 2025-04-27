@@ -497,11 +497,12 @@ class So101RobotConfig(ManipulatorRobotConfig):
 @RobotConfig.register_subclass("so100")
 @dataclass
 class So100RobotConfig(ManipulatorRobotConfig):
+    """So100 Robot configuration."""
     calibration_dir: str = ".cache/calibration/so100"
     # `max_relative_target` limits the magnitude of the relative positional target vector for safety purposes.
     # Set this to a positive scalar to have the same value for all motors, or a list that is the same length as
     # the number of motors in your follower arms.
-    max_relative_target: int | None = 20
+    max_relative_target: int | None = 10
 
     leader_arms: dict[str, MotorsBusConfig] = field(
         default_factory=lambda: {
