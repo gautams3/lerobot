@@ -36,6 +36,7 @@ TRAIN_CONFIG_NAME = "train_config.json"
 class TrainPipelineConfig(HubMixin):
     dataset: DatasetConfig
     env: envs.EnvConfig | None = None
+    episodic_val_split: float = 0.0 # split dataset episodes into train/val
     policy: PreTrainedConfig | None = None
     # Set `dir` to where you would like to save all of the run outputs. If you run another training session
     # with the same value for `dir` its contents will be overwritten unless you set `resume` to true.
