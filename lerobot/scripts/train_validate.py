@@ -107,10 +107,12 @@ def update_policy(
 
 
 @parser.wrap()
-def train_validate(cfg: TrainPipelineConfig, val_split: float = 0.0):
+def train_validate(cfg: TrainPipelineConfig):
     """ Main training script for training a policy on a dataset."""
     cfg.validate()
     logging.info(pformat(cfg.to_dict()))
+
+    val_split = cfg.episodic_val_split
 
     if cfg.wandb.enable and cfg.wandb.project:
         wandb_logger = WandBLogger(cfg)
@@ -135,24 +137,9 @@ def train_validate(cfg: TrainPipelineConfig, val_split: float = 0.0):
         # randomly choose episode indices for validation
         val_indices = torch.randperm(num_episodes)[:num_val_episodes].tolist()
         train_indices = [i for i in range(num_episodes) if i not in val_indices]
-
-        # create train and validation configs using these episode indices
-        train_cfg = copy.deepcopy(cfg.dataset)
-        train_cfg.episodes = train_indices
-        val_cfg = copy.deepcopy(cfg.dataset)
-        val_cfg.episodes = val_indices
-
-        # create train and validation datasets
-        train_dataset = make_dataset(train_cfg)
-        val_dataset = make_dataset(val_cfg)
-        del dataset, cfg  # avoid confusion about the true dataset used for training
-        cfg = train_cfg  # use train config for training
-        # dataset = train_dataset  # use train dataset for training
-        logging.info(f"Train episodes: {train_dataset.num_episodes}")
-        logging.info(f"Validation episodes: {val_dataset.num_episodes}")
     else:
-        train_dataset = dataset
-        val_dataset = None
+        train_indices = None
+        val_indices = None
 
     # Create environment used for evaluating checkpoints during training on simulation data.
     # On real-world data, no need to create an environment as evaluations are done outside train.py,
@@ -165,7 +152,7 @@ def train_validate(cfg: TrainPipelineConfig, val_split: float = 0.0):
     logging.info("Creating policy")
     policy = make_policy(
         cfg=cfg.policy,
-        ds_meta=train_dataset.meta,
+        ds_meta=dataset.meta,
     )
 
     logging.info("Creating optimizer and scheduler")
@@ -184,8 +171,8 @@ def train_validate(cfg: TrainPipelineConfig, val_split: float = 0.0):
     if cfg.env is not None:
         logging.info(f"{cfg.env.task=}")
     logging.info(f"{cfg.steps=} ({format_big_number(cfg.steps)})")
-    logging.info(f"{train_dataset.num_frames=} ({format_big_number(train_dataset.num_frames)})")
-    logging.info(f"{train_dataset.num_episodes=}")
+    logging.info(f"{dataset.num_frames=} ({format_big_number(dataset.num_frames)})")
+    logging.info(f"{dataset.num_episodes=}")
     logging.info(f"{num_learnable_params=} ({format_big_number(num_learnable_params)})")
     logging.info(f"{num_total_params=} ({format_big_number(num_total_params)})")
 
@@ -193,16 +180,29 @@ def train_validate(cfg: TrainPipelineConfig, val_split: float = 0.0):
     if hasattr(cfg.policy, "drop_n_last_frames"):
         shuffle = False
         sampler = EpisodeAwareSampler(
-            train_dataset.episode_data_index,
+            dataset.episode_data_index,
             drop_n_last_frames=cfg.policy.drop_n_last_frames,
             shuffle=True,
         )
+    elif val_split > 0.0:
+        shuffle = False
+        sampler = EpisodeAwareSampler(
+            dataset.episode_data_index,
+            episode_indices_to_use=train_indices,  # training indices
+            shuffle=True,
+        )
+        val_sampler = EpisodeAwareSampler(
+            dataset.episode_data_index,
+            episode_indices_to_use=val_indices,  # validation indices
+            shuffle=True,
+        )
+        logging.info("Create sampler for train and validation cases, from the same dataset")
     else:
         shuffle = True
         sampler = None
 
     train_dataloader = torch.utils.data.DataLoader(
-        train_dataset,
+        dataset,
         num_workers=cfg.num_workers,
         batch_size=cfg.batch_size,
         shuffle=shuffle,
@@ -211,18 +211,18 @@ def train_validate(cfg: TrainPipelineConfig, val_split: float = 0.0):
         drop_last=False,
     )
     dl_iter = cycle(train_dataloader)
-    if val_dataset is not None:
+    if val_sampler is not None:
         val_dataloader = torch.utils.data.DataLoader(
-            val_dataset,
+            dataset,
             num_workers=cfg.num_workers,
             batch_size=cfg.batch_size,
-            shuffle=False,
+            shuffle=False,  # validation dataloader should not shuffle
+            sampler=val_sampler,  # sample from validation indices only
             pin_memory=device.type != "cpu",
             drop_last=False,
         )
-        val_dl_iter = cycle(val_dataloader)
     else:
-        val_dl_iter = None
+        val_dataloader = None
 
     policy.train()
 
@@ -241,13 +241,13 @@ def train_validate(cfg: TrainPipelineConfig, val_split: float = 0.0):
     }
 
     train_tracker = MetricsTracker(
-        cfg.batch_size, train_dataset.num_frames, train_dataset.num_episodes, train_metrics, initial_step=step
+        cfg.batch_size, dataset.num_frames, dataset.num_episodes, train_metrics, initial_step=step
     )
 
-    if val_dl_iter is not None:
+    if val_dataloader is not None:
         val_tracker = MetricsTracker(
-            cfg.batch_size, val_dataset.num_frames, val_dataset.num_episodes, val_metrics, initial_step=step
-        )
+            cfg.batch_size, dataset.num_frames, dataset.num_episodes, val_metrics, initial_step=step
+        )  # TODO(gsal): not sure if this is correct
 
     logging.info("Start offline training on a fixed dataset")
     for _ in range(step, cfg.steps):
@@ -294,29 +294,45 @@ def train_validate(cfg: TrainPipelineConfig, val_split: float = 0.0):
             update_last_checkpoint(checkpoint_dir)
 
             # Add validation metrics for this ckpt, if val_dataset is available.
-            if val_dl_iter is not None:
+            if val_dataloader is not None:
                 policy.eval()  # switch to eval mode
                 with (
                     torch.no_grad(),
                     torch.autocast(device_type=device.type) if cfg.policy.use_amp else nullcontext(),
                 ):
-                    val_start_time = time.perf_counter()
-                    # TODO(gsal): cycle through validation dataloader
-                    # CRUCIAL(gsal): cycle through validation dataloader
-                    val_batch = next(val_dl_iter)
-                    val_tracker.dataloading_s = time.perf_counter() - val_start_time
-                    for key in val_batch:
-                        if isinstance(val_batch[key], torch.Tensor):
-                            val_batch[key] = val_batch[key].to(device, non_blocking=True)
+                    sum_val_dataloading_s = 0.0
+                    sum_val_loss = 0.0  # use sum instead of storing all losses, for efficiency
+                    num_val_batches = 0
 
-                    loss, output_dict = policy.forward(batch)
-                    val_tracker.val_loss = loss.item()
-                    val_tracker.val_lr = optimizer.param_groups[0]["lr"]
+                    # Create an iterator to measure the time taken by next()
+                    _val_dataloader_iter = iter(val_dataloader)
+
+                    while True:  # use while + break instead of for loop, to load data via next()
+                        # Measure time taken to load the batch, consistent with how training dataloading time is measured
+                        iter_load_start_time = time.perf_counter()
+                        try:
+                            val_batch = next(_val_dataloader_iter)
+                        except StopIteration:
+                            break  # End of validation dataset
+                        curr_batch_dataloading_s = time.perf_counter() - iter_load_start_time
+                        sum_val_dataloading_s += curr_batch_dataloading_s
+
+                        for key in val_batch:
+                            if isinstance(val_batch[key], torch.Tensor):
+                                val_batch[key] = val_batch[key].to(device, non_blocking=True)
+                        loss, output_dict = policy.forward(val_batch)
+
+                        sum_val_loss += loss.item()
+                        num_val_batches += 1
+
+                avg_val_dataloading_s = sum_val_dataloading_s / num_val_batches if num_val_batches > 0 else 0.0
+                avg_val_loss = sum_val_loss / num_val_batches if num_val_batches > 0 else 0.0
+                val_tracker.val_dataloading_s = avg_val_dataloading_s
+                val_tracker.val_loss = avg_val_loss
+                val_tracker.val_lr = optimizer.param_groups[0]["lr"]
                 logging.info(val_tracker)
                 if wandb_logger:
                     wandb_log_dict = val_tracker.to_dict()
-                    if output_dict:
-                        wandb_log_dict.update(output_dict)
                     wandb_logger.log_dict(wandb_log_dict, step)
                 val_tracker.reset_averages()
                 policy.train() # switch back to train mode
@@ -346,7 +362,7 @@ def train_validate(cfg: TrainPipelineConfig, val_split: float = 0.0):
                 "eval_s": AverageMeter("eval_s", ":.3f"),
             }
             eval_tracker = MetricsTracker(
-                cfg.batch_size, train_dataset.num_frames, train_dataset.num_episodes, eval_metrics, initial_step=step
+                cfg.batch_size, dataset.num_frames, dataset.num_episodes, eval_metrics, initial_step=step
             )
             eval_tracker.eval_s = eval_info["aggregated"].pop("eval_s")
             eval_tracker.avg_sum_reward = eval_info["aggregated"].pop("avg_sum_reward")
