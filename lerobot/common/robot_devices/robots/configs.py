@@ -481,53 +481,10 @@ class So100RobotConfig(ManipulatorRobotConfig):
     mock: bool = False
 
 
-@RobotConfig.register_subclass("so100_wrist")
+@RobotConfig.register_subclass("so100wrist")
 @dataclass
-class So100RobotWristCamConfig(ManipulatorRobotConfig):
+class So100RobotWristCamConfig(So100RobotConfig):
     """So100 Robot with wrist camera."""
-
-    # Specific to So100, LeRobot comes with default calibration files. Assuming the motors have been
-    # properly assembled, no manual calibration step is expected. If you need to run manual calibration,
-    # simply update this path to ".cache/calibration/so100"
-    calibration_dir: str = ".cache/calibration/so100"  # same as So100RobotConfig
-    # `max_relative_target` limits the magnitude of the relative positional target vector for safety purposes.
-    # Set this to a positive scalar to have the same value for all motors, or a list that is the same length as
-    # the number of motors in your follower arms.
-    max_relative_target: int | None = 5  # lower than So100RobotConfig, for fragile wrist camera
-
-    leader_arms: dict[str, MotorsBusConfig] = field(
-        default_factory=lambda: {
-            "main": FeetechMotorsBusConfig(
-                port="/dev/ttyACM1",
-                motors={
-                    # name: (index, model)
-                    "shoulder_pan": [1, "sts3215"],
-                    "shoulder_lift": [2, "sts3215"],
-                    "elbow_flex": [3, "sts3215"],
-                    "wrist_flex": [4, "sts3215"],
-                    "wrist_roll": [5, "sts3215"],
-                    "gripper": [6, "sts3215"],
-                },
-            ),
-        }
-    )
-
-    follower_arms: dict[str, MotorsBusConfig] = field(
-        default_factory=lambda: {
-            "main": FeetechMotorsBusConfig(
-                port="/dev/ttyACM0",
-                motors={
-                    # name: (index, model)
-                    "shoulder_pan": [1, "sts3215"],
-                    "shoulder_lift": [2, "sts3215"],
-                    "elbow_flex": [3, "sts3215"],
-                    "wrist_flex": [4, "sts3215"],
-                    "wrist_roll": [5, "sts3215"],
-                    "gripper": [6, "sts3215"],
-                },
-            ),
-        }
-    )
 
     cameras: dict[str, CameraConfig] = field(
         default_factory=lambda: {
@@ -539,8 +496,6 @@ class So100RobotWristCamConfig(ManipulatorRobotConfig):
             ),
         }
     )
-
-    mock: bool = False
 
 
 @RobotConfig.register_subclass("stretch")
