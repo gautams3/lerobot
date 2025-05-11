@@ -13,7 +13,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import copy
 import logging
 import time
 from contextlib import nullcontext
@@ -108,7 +107,7 @@ def update_policy(
 
 @parser.wrap()
 def train_validate(cfg: TrainPipelineConfig):
-    """ Main training script for training a policy on a dataset."""
+    """Main training script for training a policy on a dataset."""
     cfg.validate()
     logging.info(pformat(cfg.to_dict()))
 
@@ -200,6 +199,7 @@ def train_validate(cfg: TrainPipelineConfig):
     else:
         shuffle = True
         sampler = None
+        val_sampler = None
 
     train_dataloader = torch.utils.data.DataLoader(
         dataset,
@@ -325,7 +325,9 @@ def train_validate(cfg: TrainPipelineConfig):
                         sum_val_loss += loss.item()
                         num_val_batches += 1
 
-                avg_val_dataloading_s = sum_val_dataloading_s / num_val_batches if num_val_batches > 0 else 0.0
+                avg_val_dataloading_s = (
+                    sum_val_dataloading_s / num_val_batches if num_val_batches > 0 else 0.0
+                )
                 avg_val_loss = sum_val_loss / num_val_batches if num_val_batches > 0 else 0.0
                 val_tracker.val_dataloading_s = avg_val_dataloading_s
                 val_tracker.val_loss = avg_val_loss
@@ -335,7 +337,7 @@ def train_validate(cfg: TrainPipelineConfig):
                     wandb_log_dict = val_tracker.to_dict()
                     wandb_logger.log_dict(wandb_log_dict, step)
                 val_tracker.reset_averages()
-                policy.train() # switch back to train mode
+                policy.train()  # switch back to train mode
 
             if wandb_logger:
                 wandb_logger.log_policy(checkpoint_dir)
