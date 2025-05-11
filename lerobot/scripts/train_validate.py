@@ -111,7 +111,12 @@ def train_validate(cfg: TrainPipelineConfig):
     cfg.validate()
     logging.info(pformat(cfg.to_dict()))
 
-    val_split = cfg.episodic_val_split
+    val_split = cfg.val_config.episodic_val_split
+    val_indices = cfg.val_config.episodic_val_indices
+    train_indices = cfg.val_config.episodic_train_indices
+    assert 0.0 <= val_split < 1.0, (
+        "Validation split must be in range [0, 1). If you want to use train or val indices, set episodic_val_split=0.0."
+    )
 
     if cfg.wandb.enable and cfg.wandb.project:
         wandb_logger = WandBLogger(cfg)
@@ -130,12 +135,18 @@ def train_validate(cfg: TrainPipelineConfig):
     logging.info("Creating dataset")
     dataset = make_dataset(cfg)
     if val_split > 0.0:
-        assert 0.0 < val_split < 1.0, "Validation split must be in range (0,1)."
         num_episodes = dataset.num_episodes
         num_val_episodes = int(num_episodes * val_split)
-        # randomly choose episode indices for validation
-        val_indices = torch.randperm(num_episodes)[:num_val_episodes].tolist()
+        val_indices = torch.randperm(num_episodes)[:num_val_episodes].tolist()  # randomly choose episodes
         train_indices = [i for i in range(num_episodes) if i not in val_indices]
+    elif val_indices is not None and train_indices is not None:
+        pass  # use the provided indices
+    elif val_indices is not None:
+        # use the provided validation indices, everything else is training
+        train_indices = [i for i in range(dataset.num_episodes) if i not in val_indices]
+    elif train_indices is not None:
+        # use the provided training indices, everything else is validation
+        val_indices = [i for i in range(dataset.num_episodes) if i not in train_indices]
     else:
         train_indices = None
         val_indices = None

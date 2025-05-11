@@ -26,7 +26,7 @@ from lerobot.common.optim import OptimizerConfig
 from lerobot.common.optim.schedulers import LRSchedulerConfig
 from lerobot.common.utils.hub import HubMixin
 from lerobot.configs import parser
-from lerobot.configs.default import DatasetConfig, EvalConfig, WandBConfig
+from lerobot.configs.default import DatasetConfig, EvalConfig, ValidationConfig, WandBConfig
 from lerobot.configs.policies import PreTrainedConfig
 
 TRAIN_CONFIG_NAME = "train_config.json"
@@ -36,7 +36,7 @@ TRAIN_CONFIG_NAME = "train_config.json"
 class TrainPipelineConfig(HubMixin):
     dataset: DatasetConfig
     env: envs.EnvConfig | None = None
-    episodic_val_split: float = 0.0 # split dataset episodes into train/val
+    val_config: ValidationConfig = field(default_factory=ValidationConfig)
     policy: PreTrainedConfig | None = None
     # Set `dir` to where you would like to save all of the run outputs. If you run another training session
     # with the same value for `dir` its contents will be overwritten unless you set `resume` to true.
@@ -110,6 +110,27 @@ class TrainPipelineConfig(HubMixin):
 
         if isinstance(self.dataset.repo_id, list):
             raise NotImplementedError("LeRobotMultiDataset is not currently implemented.")
+
+        # check validation config
+        assert 0.0 <= self.val_config.episodic_val_split < 1.0, "val_split must be in [0, 1)."
+        if self.val_config.episodic_val_split > 0.0:
+            assert self.val_config.episodic_val_indices is None, (
+                "val_split and val_indices cannot be used together."
+            )
+            assert self.val_config.episodic_train_indices is None, (
+                "val_split and train_indices cannot be used together."
+            )
+        if self.val_config.episodic_train_indices is not None:
+            assert self.val_config.episodic_val_split == 0.0, (
+                "val_split and train_indices cannot be used together."
+            )
+            assert len(self.val_config.episodic_train_indices) > 0, "train_indices must be non-empty."
+
+        if self.val_config.episodic_val_indices is not None:
+            assert self.val_config.episodic_val_split == 0.0, (
+                "val_split and val_indices cannot be used together."
+            )
+            assert len(self.val_config.episodic_val_indices) > 0, "val_indices must be non-empty."
 
         if not self.use_policy_training_preset and (self.optimizer is None or self.scheduler is None):
             raise ValueError("Optimizer and Scheduler must be set when the policy presets are not used.")

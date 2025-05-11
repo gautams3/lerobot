@@ -69,3 +69,24 @@ class EvalConfig:
                 f"to increase the number of episodes to match the batch size (e.g. `eval.n_episodes={self.batch_size}`), "
                 f"or lower the batch size (e.g. `eval.batch_size={self.n_episodes}`)."
             )
+
+
+@dataclass
+class ValidationConfig:
+    """Validation configuration for the training pipeline. Currently, this is only used for episodic validation.
+    It is performed by splitting the dataset into training and validation episodes.
+    The training set is used to train the model, and the validation set is used to evaluate the model *during* training.
+    Args:
+        episodic_val_split (`float`, *optional*, defaults to 0.0):
+            Fraction of the dataset to use for validation, if randomly splitting the dataset.
+        episodic_val_indices (`list[int]`, *optional*, defaults to None):
+            List of episodes to use for validation. Cannot be used with `episodic_val_split`.
+            HINT: use `$(seq -s ',' a b)` to generate a list of indices from a to b.
+        episodic_train_indices (`list[int]`, *optional*, defaults to None):
+            List of episodes to use for training. Cannot be used with `episodic_val_split`.
+            HINT: use `$(seq -s ',' a b)` to generate a list of indices from a to b.
+    """
+
+    episodic_val_split: float = 0.0  # float between 0 and 1
+    episodic_val_indices: list[int] | None = None  # list of episodes to use for validation
+    episodic_train_indices: list[int] | None = None  # list of episodes to use for training
