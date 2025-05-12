@@ -134,6 +134,8 @@ def train_validate(cfg: TrainPipelineConfig):
 
     logging.info("Creating dataset")
     dataset = make_dataset(cfg)
+
+    # Check if and how we are splitting the dataset into train and validation sets
     if val_split > 0.0:
         num_episodes = dataset.num_episodes
         num_val_episodes = int(num_episodes * val_split)
@@ -150,6 +152,16 @@ def train_validate(cfg: TrainPipelineConfig):
     else:
         train_indices = None
         val_indices = None
+    do_validation = val_indices is not None and len(val_indices) > 0
+    logging.info(
+        colored(
+            f"Validation during training enabled? {do_validation}."
+            f"\nUsing {len(train_indices) if train_indices is not None else 0} training episodes"
+            f" and {len(val_indices) if val_indices is not None else 0} validation episodes.",
+            "yellow",
+            attrs=["bold"],
+        )
+    )
 
     # Create environment used for evaluating checkpoints during training on simulation data.
     # On real-world data, no need to create an environment as evaluations are done outside train.py,
@@ -194,7 +206,7 @@ def train_validate(cfg: TrainPipelineConfig):
             drop_n_last_frames=cfg.policy.drop_n_last_frames,
             shuffle=True,
         )
-    elif val_split > 0.0:
+    elif do_validation:
         shuffle = False
         sampler = EpisodeAwareSampler(
             dataset.episode_data_index,
@@ -204,7 +216,7 @@ def train_validate(cfg: TrainPipelineConfig):
         val_sampler = EpisodeAwareSampler(
             dataset.episode_data_index,
             episode_indices_to_use=val_indices,  # validation indices
-            shuffle=True,
+            shuffle=False,  # don't shuffle; we validate on the entire validation set
         )
         logging.info("Create sampler for train and validation cases, from the same dataset")
     else:
@@ -222,7 +234,9 @@ def train_validate(cfg: TrainPipelineConfig):
         drop_last=False,
     )
     dl_iter = cycle(train_dataloader)
-    if val_sampler is not None:
+    if do_validation:
+        # Create a separate dataloader for validation, using the validation sampler
+        # The dataloader should not shuffle, as validate on the entire validation set
         val_dataloader = torch.utils.data.DataLoader(
             dataset,
             num_workers=cfg.num_workers,
@@ -255,7 +269,7 @@ def train_validate(cfg: TrainPipelineConfig):
         cfg.batch_size, dataset.num_frames, dataset.num_episodes, train_metrics, initial_step=step
     )
 
-    if val_dataloader is not None:
+    if do_validation:
         val_tracker = MetricsTracker(
             cfg.batch_size, dataset.num_frames, dataset.num_episodes, val_metrics, initial_step=step
         )  # TODO(gsal): not sure if this is correct
@@ -305,7 +319,7 @@ def train_validate(cfg: TrainPipelineConfig):
             update_last_checkpoint(checkpoint_dir)
 
             # Add validation metrics for this ckpt, if val_dataset is available.
-            if val_dataloader is not None:
+            if do_validation:
                 policy.eval()  # switch to eval mode
                 with (
                     torch.no_grad(),
@@ -355,7 +369,7 @@ def train_validate(cfg: TrainPipelineConfig):
 
         if cfg.env and is_eval_step:
             step_id = get_step_identifier(step, cfg.steps)
-            logging.info(f"Eval policy at step {step}")
+            logging.info("Eval policy at step %d", step_id)
             with (
                 torch.no_grad(),
                 torch.autocast(device_type=device.type) if cfg.policy.use_amp else nullcontext(),
