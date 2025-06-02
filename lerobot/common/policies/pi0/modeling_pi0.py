@@ -381,6 +381,9 @@ class PI0Policy(PreTrainedPolicy):
     def prepare_language(self, batch) -> tuple[Tensor, Tensor]:
         """Tokenize the text input"""
         device = batch[OBS_ROBOT].device
+        # TODO: modify dataset to include task description in the batch.
+        # Use this HACK for now.
+        batch["task"] = ["Grasp a lego block and put it in the bin."]  # HACK
         tasks = batch["task"]
 
         # PaliGemma prompt has to end with a new line
