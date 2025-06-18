@@ -383,7 +383,7 @@ class PI0Policy(PreTrainedPolicy):
         device = batch[OBS_ROBOT].device
         # TODO: modify dataset to include task description in the batch.
         # Use this HACK for now.
-        batch["task"] = ["Grasp a lego block and put it in the bin."]  # HACK
+        batch["task"] = ["Grasp a waterproof connector and put it in the bin."]  # HACK
         tasks = batch["task"]
 
         # PaliGemma prompt has to end with a new line
