@@ -216,6 +216,7 @@ class OpenCVCamera(Camera):
                 self.capture_width, self.capture_height = default_width, default_height
         else:
             self._validate_width_and_height()
+        self.videocapture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
 
     def _validate_fps(self) -> None:
         """Validates and sets the camera's frames per second (FPS)."""
